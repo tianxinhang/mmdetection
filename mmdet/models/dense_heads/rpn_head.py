@@ -7,7 +7,7 @@ from mmcv.ops import batched_nms
 from ..builder import HEADS
 from .anchor_head import AnchorHead
 from .rpn_test_mixin import RPNTestMixin
-
+import torch.nn.functional as F
 
 @HEADS.register_module()
 class RPNHead(RPNTestMixin, AnchorHead):
@@ -76,6 +76,128 @@ class RPNHead(RPNTestMixin, AnchorHead):
         return dict(
             loss_rpn_cls=losses['loss_cls'], loss_rpn_bbox=losses['loss_bbox'])
 
+    
+    def _get_bboxes_single_2(self,
+                             cls_scores,
+                             bbox_preds,
+                             mlvl_anchors,
+                             img_shape,
+                             scale_factor,
+                             semantic_num_classes,
+                             semantic_pred_single=None,  # shape(1,H,W) >> 实际shape(H,W)，因为1会被退化掉
+                             cfg = None,
+                             rescale=False):
+        """Transform outputs for a single batch item into bbox predictions.
+
+        Args:
+            cls_scores (list[Tensor]): Box scores for each scale level
+                Has shape (num_anchors * num_classes, H, W).
+            bbox_preds (list[Tensor]): Box energies / deltas for each scale
+                level with shape (num_anchors * 4, H, W).
+            mlvl_anchors (list[Tensor]): Box reference for each scale level
+                with shape (num_total_anchors, 4).
+            img_shape (tuple[int]): Shape of the input image,
+                (height, width, 3).
+            scale_factor (ndarray): Scale factor of the image arange as
+                (w_scale, h_scale, w_scale, h_scale).
+            cfg (mmcv.Config): Test / postprocessing configuration,
+                if None, test_cfg would be used.
+            rescale (bool): If True, return boxes in original image space.
+
+        Returns:
+            Tensor: Labeled boxes in shape (n, 5), where the first 4 columns
+                are bounding box positions (tl_x, tl_y, br_x, br_y) and the
+                5-th column is a score between 0 and 1.
+        """
+        cfg = self.test_cfg if cfg is None else cfg
+        # bboxes from different level should be independent during NMS,
+        # level_ids are used as labels for batched NMS to separate them
+        level_ids = []
+        mlvl_scores = []
+        mlvl_bbox_preds = []
+        mlvl_valid_anchors = []
+        for idx in range(len(cls_scores)):
+            rpn_cls_score = cls_scores[idx]
+            rpn_bbox_pred = bbox_preds[idx]
+            assert rpn_cls_score.size()[-2:] == rpn_bbox_pred.size()[-2:]
+            rpn_cls_score = rpn_cls_score.permute(1, 2, 0)
+            if self.use_sigmoid_cls:
+                rpn_cls_score = rpn_cls_score.reshape(-1)
+                scores = rpn_cls_score.sigmoid()
+            else:
+                rpn_cls_score = rpn_cls_score.reshape(-1, 2)
+                # we set FG labels to [0, num_class-1] and BG label to
+                # num_class in other heads since mmdet v2.0, However we
+                # keep BG label as 0 and FG label as 1 in rpn head
+                scores = rpn_cls_score.softmax(dim=1)[:, 1]
+            rpn_bbox_pred = rpn_bbox_pred.permute(1, 2, 0).reshape(-1, 4)
+            anchors = mlvl_anchors[idx]
+            if cfg.nms_pre > 0 and scores.shape[0] > cfg.nms_pre:
+                # sort is faster than topk
+                # _, topk_inds = scores.topk(cfg.nms_pre)
+                ranked_scores, rank_inds = scores.sort(descending=True)
+                topk_inds = rank_inds[:cfg.nms_pre]
+                scores = ranked_scores[:cfg.nms_pre]
+                rpn_bbox_pred = rpn_bbox_pred[topk_inds, :]
+                anchors = anchors[topk_inds, :]
+            mlvl_scores.append(scores)
+            mlvl_bbox_preds.append(rpn_bbox_pred)
+            mlvl_valid_anchors.append(anchors)
+            level_ids.append(
+                scores.new_full((scores.size(0), ), idx, dtype=torch.long))
+
+        scores = torch.cat(mlvl_scores)
+        anchors = torch.cat(mlvl_valid_anchors)
+        rpn_bbox_pred = torch.cat(mlvl_bbox_preds)
+        centers, proposals = self.bbox_coder.decode_2(  # 见delta2bbox，返回的shape N*4,不同的scale被凭借在同一维度
+            anchors, rpn_bbox_pred, max_shape=img_shape)
+        ids = torch.cat(level_ids)# 用来记录每个proposal所在的层数
+
+        if cfg.min_bbox_size > 0:
+            w = proposals[:, 2] - proposals[:, 0]
+            h = proposals[:, 3] - proposals[:, 1]
+            valid_inds = torch.nonzero(
+                (w >= cfg.min_bbox_size)
+                & (h >= cfg.min_bbox_size),
+                as_tuple=False).squeeze()
+            if valid_inds.sum().item() != len(proposals):
+                proposals = proposals[valid_inds, :]
+                scores = scores[valid_inds]
+                ids = ids[valid_inds]
+
+        #sfa
+        if semantic_pred_single is not None:
+            #step1:转化找到中心点的位置。 去anchor generator里看看，坐标的值是（0，1）还是以像素为基础： 答案：以像素为基础，以原图的H,W为坐标器
+            #step2：但是semantic_pred 好像是以fusion_level = 1，即stride list里的第二元素，即stride = 8为坐标器。这就是为什么semantic_roi_extractor的featmap_strides=[8]
+            #具体看SingleRoIExtractor
+            #step3：看看除了遍历每个中心点，有没有其他方法也可以导出对应的ind.
+            max_label = semantic_pred_single.max()
+            if max_label < semantic_num_classes-1:  #如果没有背景，全是前景，则不用做saf筛选了
+                pass
+            else:
+                semantic_pred_single = semantic_pred_single.type(torch.float32).unsqueeze(0)
+                semantic_pred_single = F.interpolate(semantic_pred_single,size=(8,8), mode='nearest')
+                semantic_pred_single = semantic_pred_single.squeeze()
+                #centers N*2
+                record = []
+                t = 0
+                for i in range(centers.size()[0]):
+                    x,y = centers[i][0],centers[i][1]
+                    if semantic_pred_single[y][x] == semantic_num_classes-1:
+                        record.append(t)                                   #pre_nums = 183,这个不知道包不包含BG
+                    t += 1
+                scores = scores[record]
+                proposals = proposals[record]
+                ids = ids[record]
+        #sfa
+
+        # TODO: remove the hard coded nms type
+        nms_cfg = dict(type='nms', iou_threshold=cfg.nms_thr)
+        dets, keep = batched_nms(proposals, scores, ids, nms_cfg)
+        return dets[:cfg.nms_post]
+    
+    
+    
     def _get_bboxes_single(self,
                            cls_scores,
                            bbox_preds,
