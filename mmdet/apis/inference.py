@@ -124,7 +124,7 @@ def inference_detector(model, img):
     return result
 
 
-def inference_detector(model, img):
+def inference_detector_2(model, img):
     """Inference image(s) with the detector.
 
     Args:
