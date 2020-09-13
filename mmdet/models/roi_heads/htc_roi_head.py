@@ -488,9 +488,9 @@ class HybridTaskCascadeRoIHead(CascadeRoIHead):
         if proposal_list is None:
             if self.with_semantic:
                 rpn_outs = tmp_rpn_head(x)  # 这一步返回的是没有nms的
-                proposal_inputs = rpn_outs + img_metas
+#                 proposal_inputs = rpn_outs + img_metas
                 semantic_num_classes = self.semantic_head.num_classes
-                proposal_list = tmp_rpn_head.get_bboxes_2(*proposal_inputs, semantic_num_classes,semantic_pred)  # 这一步返回的是nms的
+                proposal_list = tmp_rpn_head.get_bboxes_2(*rpn_outs,img_metas, semantic_num_classes,semantic_pred)  # 这一步返回的是nms的
             else:
                 rpn_outs = tmp_rpn_head(x)  # 这一步返回的是没有nms的
                 proposal_inputs = rpn_outs + img_metas
