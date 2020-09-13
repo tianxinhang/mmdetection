@@ -152,7 +152,43 @@ class BaseDetector(nn.Module, metaclass=ABCMeta):
             # TODO: support test augmentation for predefined proposals
             assert 'proposals' not in kwargs
             return self.aug_test(imgs, img_metas, **kwargs)
+    
+    def forward_test_2(self, imgs, img_metas, **kwargs):
+        """
+        Args:
+            imgs (List[Tensor]): the outer list indicates test-time
+                augmentations and inner Tensor should have a shape NxCxHxW,
+                which contains all images in the batch.
+            img_metas (List[List[dict]]): the outer list indicates test-time
+                augs (multiscale, flip, etc.) and the inner list indicates
+                images in a batch.
+        """
+        for var, name in [(imgs, 'imgs'), (img_metas, 'img_metas')]:
+            if not isinstance(var, list):
+                raise TypeError(f'{name} must be a list, but got {type(var)}')
 
+        num_augs = len(imgs)
+        if num_augs != len(img_metas):
+            raise ValueError(f'num of augmentations ({len(imgs)}) '
+                             f'!= num of image meta ({len(img_metas)})')
+        # TODO: remove the restriction of samples_per_gpu == 1 when prepared
+        samples_per_gpu = imgs[0].size(0)
+        assert samples_per_gpu == 1
+
+        if num_augs == 1:
+            # proposals (List[List[Tensor]]): the outer list indicates
+            # test-time augs (multiscale, flip, etc.) and the inner list
+            # indicates images in a batch.
+            # The Tensor should have a shape Px4, where P is the number of
+            # proposals.
+            if 'proposals' in kwargs:
+                kwargs['proposals'] = kwargs['proposals'][0]
+            return self.simple_test_2(imgs[0], img_metas[0], **kwargs)
+        else:
+            # TODO: support test augmentation for predefined proposals
+            assert 'proposals' not in kwargs
+            return self.aug_test(imgs, img_metas, **kwargs)
+    
     @auto_fp16(apply_to=('img', ))
     def forward(self, img, img_metas, return_loss=True, **kwargs):
         """Calls either :func:`forward_train` or :func:`forward_test` depending
@@ -168,7 +204,24 @@ class BaseDetector(nn.Module, metaclass=ABCMeta):
             return self.forward_train(img, img_metas, **kwargs)
         else:
             return self.forward_test(img, img_metas, **kwargs)
+    
+    @auto_fp16(apply_to=('img',))
+    def forward_2(self, img, img_metas, return_loss=True, **kwargs):
+        """Calls either :func:`forward_train` or :func:`forward_test` depending
+        on whether ``return_loss`` is ``True``.
 
+        Note this setting will change the expected inputs. When
+        ``return_loss=True``, img and img_meta are single-nested (i.e. Tensor
+        and List[dict]), and when ``resturn_loss=False``, img and img_meta
+        should be double nested (i.e.  List[Tensor], List[List[dict]]), with
+        the outer list indicating test time augmentations.
+        """
+        if return_loss:
+            return self.forward_train(img, img_metas, **kwargs)
+        else:
+            return self.forward_test_2(img, img_metas, **kwargs)
+    
+    
     def _parse_losses(self, losses):
         """Parse the raw outputs (losses) of the network.
 
