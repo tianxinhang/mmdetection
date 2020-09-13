@@ -469,6 +469,164 @@ class HybridTaskCascadeRoIHead(CascadeRoIHead):
 
         return results
 
+      
+    def simple_test_2(self, x, proposal_list, img_metas,tmp_rpn_head,rescale=False):
+        """Test without augmentation."""
+        # if self.with_semantic:
+        #     _, semantic_feat = self.semantic_head(x)
+        # else:
+        #     semantic_feat = None
+
+        # mine start
+        if self.with_semantic:
+            semantic_pred, semantic_feat = self.semantic_head(x)
+            semantic_pred = torch.argmax(semantic_pred, axis=1)  # shape (N, C, H, W) 》》 shape(N,1,H,W).
+        else:
+            semantic_feat = None
+            semantic_pred = None
+            
+        if proposal_list is None:
+            if self.with_semantic:
+                rpn_outs = tmp_rpn_head(x)  # 这一步返回的是没有nms的
+                proposal_inputs = rpn_outs + img_metas
+                semantic_num_classes = self.semantic_head.num_classes
+                proposal_list = tmp_rpn_head.get_bboxes_2(*proposal_inputs, semantic_num_classes,semantic_pred)  # 这一步返回的是nms的
+            else:
+                rpn_outs = tmp_rpn_head(x)  # 这一步返回的是没有nms的
+                proposal_inputs = rpn_outs + img_metas
+                proposal_list = tmp_rpn_head.get_bboxes(*proposal_inputs)
+
+        # mine end
+
+        num_imgs = len(proposal_list)
+        img_shapes = tuple(meta['img_shape'] for meta in img_metas)
+        ori_shapes = tuple(meta['ori_shape'] for meta in img_metas)
+        scale_factors = tuple(meta['scale_factor'] for meta in img_metas)
+
+        # "ms" in variable names means multi-stage
+        ms_bbox_result = {}
+        ms_segm_result = {}
+        ms_scores = []
+        rcnn_test_cfg = self.test_cfg
+
+        rois = bbox2roi(proposal_list)
+        for i in range(self.num_stages):
+            bbox_head = self.bbox_head[i]
+            bbox_results = self._bbox_forward(
+                i, x, rois, semantic_feat=semantic_feat)
+            # split batch bbox prediction back to each image
+            cls_score = bbox_results['cls_score']
+            bbox_pred = bbox_results['bbox_pred']
+            num_proposals_per_img = tuple(len(p) for p in proposal_list)
+            rois = rois.split(num_proposals_per_img, 0)
+            cls_score = cls_score.split(num_proposals_per_img, 0)
+            bbox_pred = bbox_pred.split(num_proposals_per_img, 0)
+            ms_scores.append(cls_score)
+
+            if i < self.num_stages - 1:
+                bbox_label = [s[:, :-1].argmax(dim=1) for s in cls_score]
+                rois = torch.cat([
+                    bbox_head.regress_by_class(rois[i], bbox_label[i],
+                                               bbox_pred[i], img_metas[i])
+                    for i in range(num_imgs)
+                ])
+
+        # average scores of each image by stages
+        cls_score = [
+            sum([score[i] for score in ms_scores]) / float(len(ms_scores))
+            for i in range(num_imgs)
+        ]
+
+        # apply bbox post-processing to each image individually
+        det_bboxes = []
+        det_labels = []
+        for i in range(num_imgs):
+            det_bbox, det_label = self.bbox_head[-1].get_bboxes(
+                rois[i],
+                cls_score[i],
+                bbox_pred[i],
+                img_shapes[i],
+                scale_factors[i],
+                rescale=rescale,
+                cfg=rcnn_test_cfg)
+            det_bboxes.append(det_bbox)
+            det_labels.append(det_label)
+        bbox_result = [
+            bbox2result(det_bboxes[i], det_labels[i],
+                        self.bbox_head[-1].num_classes)
+            for i in range(num_imgs)
+        ]
+        ms_bbox_result['ensemble'] = bbox_result
+
+        if self.with_mask:
+            if all(det_bbox.shape[0] == 0 for det_bbox in det_bboxes):
+                mask_classes = self.mask_head[-1].num_classes
+                segm_results = [[[] for _ in range(mask_classes)]
+                                for _ in range(num_imgs)]
+            else:
+                if rescale and not isinstance(scale_factors[0], float):
+                    scale_factors = [
+                        torch.from_numpy(scale_factor).to(det_bboxes[0].device)
+                        for scale_factor in scale_factors
+                    ]
+                _bboxes = [
+                    det_bboxes[i][:, :4] *
+                    scale_factors[i] if rescale else det_bboxes[i]
+                    for i in range(num_imgs)
+                ]
+                mask_rois = bbox2roi(_bboxes)
+                aug_masks = []
+                mask_roi_extractor = self.mask_roi_extractor[-1]
+                mask_feats = mask_roi_extractor(
+                    x[:len(mask_roi_extractor.featmap_strides)], mask_rois)
+                if self.with_semantic and 'mask' in self.semantic_fusion:
+                    mask_semantic_feat = self.semantic_roi_extractor(
+                        [semantic_feat], mask_rois)
+                    mask_feats += mask_semantic_feat
+                last_feat = None
+
+                num_bbox_per_img = tuple(len(_bbox) for _bbox in _bboxes)
+                for i in range(self.num_stages):
+                    mask_head = self.mask_head[i]
+                    if self.mask_info_flow:
+                        mask_pred, last_feat = mask_head(mask_feats, last_feat)
+                    else:
+                        mask_pred = mask_head(mask_feats)
+
+                    # split batch mask prediction back to each image
+                    mask_pred = mask_pred.split(num_bbox_per_img, 0)
+                    aug_masks.append(
+                        [mask.sigmoid().cpu().numpy() for mask in mask_pred])
+
+                # apply mask post-processing to each image individually
+                segm_results = []
+                for i in range(num_imgs):
+                    if det_bboxes[i].shape[0] == 0:
+                        segm_results.append(
+                            [[]
+                             for _ in range(self.mask_head[-1].num_classes)])
+                    else:
+                        aug_mask = [mask[i] for mask in aug_masks]
+                        merged_mask = merge_aug_masks(
+                            aug_mask, [[img_metas[i]]] * self.num_stages,
+                            rcnn_test_cfg)
+                        segm_result = self.mask_head[-1].get_seg_masks(
+                            merged_mask, _bboxes[i], det_labels[i],
+                            rcnn_test_cfg, ori_shapes[i], scale_factors[i],
+                            rescale)
+                        segm_results.append(segm_result)
+            ms_segm_result['ensemble'] = segm_results
+
+        if self.with_mask:
+            results = list(
+                zip(ms_bbox_result['ensemble'], ms_segm_result['ensemble']))
+        else:
+            results = ms_bbox_result['ensemble']
+
+        return results    
+      
+      
+      
     def aug_test(self, img_feats, proposal_list, img_metas, rescale=False):
         """Test with augmentations.
 
