@@ -1,5 +1,6 @@
 from ..builder import DETECTORS
 from .cascade_rcnn import CascadeRCNN
+import torch
 
 
 @DETECTORS.register_module()
@@ -56,7 +57,7 @@ class HybridTaskCascade(CascadeRCNN):
         losses = dict()
         if self.roi_head.with_semantic:
             semantic_pred, semantic_feat = self.semantic_head(x)
-
+            semantic_pred = torch.argmax(semantic_pred, axis=1)  # shape (N, C, H, W) 》》 shape(N,1,H,W).
         # RPN forward and loss
         if self.with_rpn:
             proposal_cfg = self.train_cfg.get('rpn_proposal',
