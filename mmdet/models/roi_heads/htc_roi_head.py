@@ -379,8 +379,8 @@ class HybridTaskCascadeRoIHead(CascadeRoIHead):
         losses = dict()
         if self.with_semantic:
             semantic_pred, semantic_feat = semantic_pred, semantic_feat
-            loss_seg = self.semantic_head.loss(semantic_pred, gt_semantic_seg)
-            losses['loss_semantic_seg'] = loss_seg
+#             loss_seg = self.semantic_head.loss(semantic_pred, gt_semantic_seg)
+#             losses['loss_semantic_seg'] = loss_seg
         else:
             semantic_feat = None
 
