@@ -334,7 +334,134 @@ class HybridTaskCascadeRoIHead(CascadeRoIHead):
                         bbox_results['bbox_pred'], pos_is_gts, img_metas)
 
         return losses
+    def forward_train_2(self,
+                      x,
+                      img_metas,
+                      proposal_list,
+                      gt_bboxes,
+                      gt_labels,
+                        semantic_pred,
+                        semantic_feat,
+                      gt_bboxes_ignore=None,
+                      gt_masks=None,
+                      gt_semantic_seg=None):
+        """
+        Args:
+            x (list[Tensor]): list of multi-level img features.
 
+            img_metas (list[dict]): list of image info dict where each dict
+                has: 'img_shape', 'scale_factor', 'flip', and may also contain
+                'filename', 'ori_shape', 'pad_shape', and 'img_norm_cfg'.
+                For details on the values of these keys see
+                `mmdet/datasets/pipelines/formatting.py:Collect`.
+
+            proposal_list (list[Tensors]): list of region proposals.
+
+            gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
+                shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
+
+            gt_labels (list[Tensor]): class indices corresponding to each box
+
+            gt_bboxes_ignore (None, list[Tensor]): specify which bounding
+                boxes can be ignored when computing the loss.
+
+            gt_masks (None, Tensor) : true segmentation masks for each box
+                used if the architecture supports a segmentation task.
+
+            gt_semantic_seg (None, list[Tensor]): semantic segmentation masks
+                used if the architecture supports semantic segmentation task.
+
+        Returns:
+            dict[str, Tensor]: a dictionary of loss components
+        """
+        # semantic segmentation part
+        # 2 outputs: segmentation prediction and embedded features
+        losses = dict()
+        if self.with_semantic:
+            semantic_pred, semantic_feat = semantic_pred, semantic_feat
+            loss_seg = self.semantic_head.loss(semantic_pred, gt_semantic_seg)
+            losses['loss_semantic_seg'] = loss_seg
+        else:
+            semantic_feat = None
+
+        for i in range(self.num_stages):
+            self.current_stage = i
+            rcnn_train_cfg = self.train_cfg[i]
+            lw = self.stage_loss_weights[i]
+
+            # assign gts and sample proposals
+            sampling_results = []
+            bbox_assigner = self.bbox_assigner[i]
+            bbox_sampler = self.bbox_sampler[i]
+            num_imgs = len(img_metas)
+            if gt_bboxes_ignore is None:
+                gt_bboxes_ignore = [None for _ in range(num_imgs)]
+
+            for j in range(num_imgs):
+                assign_result = bbox_assigner.assign(proposal_list[j],
+                                                     gt_bboxes[j],
+                                                     gt_bboxes_ignore[j],
+                                                     gt_labels[j])
+                sampling_result = bbox_sampler.sample(
+                    assign_result,
+                    proposal_list[j],
+                    gt_bboxes[j],
+                    gt_labels[j],
+                    feats=[lvl_feat[j][None] for lvl_feat in x])
+                sampling_results.append(sampling_result)
+
+            # bbox head forward and loss
+            bbox_results = \
+                self._bbox_forward_train(
+                    i, x, sampling_results, gt_bboxes, gt_labels,
+                    rcnn_train_cfg, semantic_feat)
+            roi_labels = bbox_results['bbox_targets'][0]
+
+            for name, value in bbox_results['loss_bbox'].items():
+                losses[f's{i}.{name}'] = (
+                    value * lw if 'loss' in name else value)
+
+            # mask head forward and loss
+            if self.with_mask:
+                # interleaved execution: use regressed bboxes by the box branch
+                # to train the mask branch
+                if self.interleaved:
+                    pos_is_gts = [res.pos_is_gt for res in sampling_results]
+                    with torch.no_grad():
+                        proposal_list = self.bbox_head[i].refine_bboxes(
+                            bbox_results['rois'], roi_labels,
+                            bbox_results['bbox_pred'], pos_is_gts, img_metas)
+                        # re-assign and sample 512 RoIs from 512 RoIs
+                        sampling_results = []
+                        for j in range(num_imgs):
+                            assign_result = bbox_assigner.assign(
+                                proposal_list[j], gt_bboxes[j],
+                                gt_bboxes_ignore[j], gt_labels[j])
+                            sampling_result = bbox_sampler.sample(
+                                assign_result,
+                                proposal_list[j],
+                                gt_bboxes[j],
+                                gt_labels[j],
+                                feats=[lvl_feat[j][None] for lvl_feat in x])
+                            sampling_results.append(sampling_result)
+                mask_results = self._mask_forward_train(
+                    i, x, sampling_results, gt_masks, rcnn_train_cfg,
+                    semantic_feat)
+                for name, value in mask_results['loss_mask'].items():
+                    losses[f's{i}.{name}'] = (
+                        value * lw if 'loss' in name else value)
+
+            # refine bboxes (same as Cascade R-CNN)
+            if i < self.num_stages - 1 and not self.interleaved:
+                pos_is_gts = [res.pos_is_gt for res in sampling_results]
+                with torch.no_grad():
+                    proposal_list = self.bbox_head[i].refine_bboxes(
+                        bbox_results['rois'], roi_labels,
+                        bbox_results['bbox_pred'], pos_is_gts, img_metas)
+
+        return losses
+      
+      
     def simple_test(self, x, proposal_list, img_metas, rescale=False):
         """Test without augmentation."""
         if self.with_semantic:
