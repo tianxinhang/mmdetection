@@ -829,7 +829,7 @@ class AnchorHead(BaseDenseHead):
             concat_anchor_list.append(torch.cat(anchor_list[i]))
         all_anchor_list = images_to_levels(concat_anchor_list,
                                            num_level_anchors)
-
+        semantic_preds = [semantic_pred]*len(cls_scores)
         losses_cls, losses_bbox = multi_apply(
             self.loss_single_2,
             cls_scores,
@@ -839,7 +839,7 @@ class AnchorHead(BaseDenseHead):
             label_weights_list,
             bbox_targets_list,
             bbox_weights_list,
-            semantic_pred,
+            semantic_preds,
             num_total_samples=num_total_samples)
         return dict(loss_cls=losses_cls, loss_bbox=losses_bbox)
       
