@@ -671,6 +671,9 @@ class AnchorHead(BaseDenseHead):
             mask_3 = F.interpolate(mask_3, size=(H, W), mode='nearest')
             mask_3 = mask_3.squeeze()
             label = labels[i]
+            mask_3 = mask_3.view(-1)
+#             print("mask_3: ",mask_3.size())
+#             print("label: ",label.size())
             for j in range(len(label)):
                 if label[j] == 1 and mask_3[j//3] == 0:
                     labels[i][j] = 0
