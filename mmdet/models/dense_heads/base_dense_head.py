@@ -53,7 +53,8 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
             loss_inputs = outs + (gt_bboxes, img_metas)
         else:
             loss_inputs = outs + (gt_bboxes, gt_labels, img_metas)
-        losses = self.loss_2(*loss_inputs,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore)
+#         losses = self.loss_2(*loss_inputs,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore)
+        losses = self.loss_2(*outs,gt_bboxes,gt_labels,img_metas,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore)
         if proposal_cfg is None:
             return losses
         else:
