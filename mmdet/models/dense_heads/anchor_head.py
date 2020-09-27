@@ -671,14 +671,21 @@ class AnchorHead(BaseDenseHead):
             mask_3 = F.interpolate(mask_3, size=(H, W), mode='nearest')
             mask_3 = mask_3.squeeze()
             label = labels[i]
+            
             mask_3 = mask_3.view(-1)
-#             print("mask_3: ",mask_3.size())
-#             print("label: ",label.size())
-            for j in range(len(label)):
-                if label[j] == 1 and mask_3[j//3] == 0:
-                    labels[i][j] = 0
-                    label_weights[i][j] = 0.0
-                    # bbox_weights[i,j,:] = 0.0             # 这里需不需要呢？？？？？？？？
+            mask_3= mask_3.type(torch.long)
+            mask_3 = mask_3.view(mask_3.size()[0], -1)
+            mask_3 = mask_3.expand(mask_3.size()[0], 3)
+            mask_3 = mask_3.reshape(-1)
+            labels[i] = labels[i]* mask_3
+            
+# #             print("mask_3: ",mask_3.size())
+# #             print("label: ",label.size())
+#             for j in range(len(label)):
+#                 if label[j] == 1 and mask_3[j//3] == 0:
+#                     labels[i][j] = 0
+#                     label_weights[i][j] = 0.0
+#                     # bbox_weights[i,j,:] = 0.0             # 这里需不需要呢？？？？？？？？
 
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
