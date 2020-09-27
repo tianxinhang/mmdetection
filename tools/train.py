@@ -83,6 +83,16 @@ def main():
     args = parse_args()
 
     cfg = Config.fromfile(args.config)
+    
+    #mime
+    cfg.optimizer.lr = 0.02 / 8
+    cfg.lr_config.warmup = None
+    cfg.evaluation.interval = 20
+    # We can set the checkpoint saving interval to reduce the storage cost
+    cfg.checkpoint_config.interval = 20
+    cfg.load_from = "checkpoints/htc_r101_fpn_20e_coco_20200317-9b41b48f.pth"
+    #mime
+    
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
     # import modules from string list.
