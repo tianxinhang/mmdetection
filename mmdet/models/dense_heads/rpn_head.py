@@ -126,11 +126,12 @@ class RPNHead(RPNTestMixin, AnchorHead):
             mask_1 = torch.ne(semantic_pred_single, 0)
             mask_2 = torch.lt(semantic_pred_single, 92)
             mask_3 = torch.eq(mask_1, mask_2).type(torch.float32)
-            mask_3 = mask_3.sigmoid()
+#             mask_3 = mask_3.sigmoid()
             mask_3 = mask_3.unsqueeze(0)
             mask_3 = mask_3.unsqueeze(0)
             mask_3 = F.interpolate(mask_3, size=(H,W), mode='nearest')
             mask_3 = mask_3.squeeze()
+            mask_3 = mask_3.sigmoid()
 
             if self.use_sigmoid_cls:
                 scores = rpn_cls_score.sigmoid()  # 3*w*h
