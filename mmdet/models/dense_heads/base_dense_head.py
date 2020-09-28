@@ -28,6 +28,7 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
                       gt_labels=None,
                       gt_bboxes_ignore=None,
                       proposal_cfg=None,
+                        gt_semantic_seg=None,
                       **kwargs):
         """
         Args:
@@ -54,7 +55,7 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
         else:
             loss_inputs = outs + (gt_bboxes, gt_labels, img_metas)
 #         losses = self.loss_2(*loss_inputs,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore)
-        losses = self.loss_2(*outs,gt_bboxes,gt_labels,img_metas,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore)
+        losses = self.loss_2(*outs,gt_bboxes,gt_labels,img_metas,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore, gt_semantic_seg= gt_semantic_seg)
         if proposal_cfg is None:
             return losses
         else:
