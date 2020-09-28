@@ -634,7 +634,7 @@ class AnchorHead(BaseDenseHead):
       
       
     def loss_single_2(self, cls_score, bbox_pred, anchors, labels, label_weights,          #labels, label_weights, bbox_targets这些长度还是anchor size，但只有256个不是0
-                    bbox_targets, bbox_weights,semantic_pred,num_total_samples,):
+                    bbox_targets, bbox_weights,gt_semantic_segs,num_total_samples,):
         """Compute loss of a single scale level.
 
         Args:
@@ -663,14 +663,14 @@ class AnchorHead(BaseDenseHead):
         for i in range(cls_score.size()[0]):
             H = cls_score[i].size()[-2]
             W = cls_score[i].size()[-1]
-            mask_1 = torch.ne(semantic_pred[i], 0)
-            mask_2 = torch.lt(semantic_pred[i], 92)
+            mask_0 = gt_semantic_segs[i].squeeze()
+            mask_1 = torch.ne(mask_0, 0)
+            mask_2 = torch.lt(mask_0, 92)
             mask_3 = torch.eq(mask_1, mask_2).type(torch.float32)
             mask_3 = mask_3.unsqueeze(0)
             mask_3 = mask_3.unsqueeze(0)
             mask_3 = F.interpolate(mask_3, size=(H, W), mode='nearest')
             mask_3 = mask_3.squeeze()
-            label = labels[i]
             
             mask_3 = mask_3.view(-1)
             mask_3= mask_3.type(torch.long)
@@ -788,7 +788,7 @@ class AnchorHead(BaseDenseHead):
              gt_labels,  # gt_labels一般都是None
              img_metas,
                semantic_pred = None,
-             gt_bboxes_ignore=None):
+             gt_bboxes_ignore=None,gt_semantic_seg=None):
         """Compute losses of the head.
 
         Args:
@@ -839,7 +839,8 @@ class AnchorHead(BaseDenseHead):
             concat_anchor_list.append(torch.cat(anchor_list[i]))
         all_anchor_list = images_to_levels(concat_anchor_list,
                                            num_level_anchors)
-        semantic_preds = [semantic_pred]*len(cls_scores)
+#         semantic_preds = [semantic_pred]*len(cls_scores)
+        gt_semantic_segs = [gt_semantic_seg] * len(cls_scores)  #v3.0
         losses_cls, losses_bbox = multi_apply(
             self.loss_single_2,
             cls_scores,
@@ -849,7 +850,7 @@ class AnchorHead(BaseDenseHead):
             label_weights_list,
             bbox_targets_list,
             bbox_weights_list,
-            semantic_preds,
+            gt_semantic_segs,
             num_total_samples=num_total_samples)
         return dict(loss_cls=losses_cls, loss_bbox=losses_bbox)
       
