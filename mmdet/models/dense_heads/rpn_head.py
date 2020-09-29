@@ -226,26 +226,7 @@ class RPNHead(RPNTestMixin, AnchorHead):
         mlvl_bbox_preds = []
         mlvl_valid_anchors = []
 
-        # for i in range(cls_score.size()[0]):                       #单层
-        #     H = cls_score[i].size()[-2]
-        #     W = cls_score[i].size()[-1]
-        #     mask_0 = gt_semantic_segs[i].squeeze()
-        #     mask_1 = torch.ne(mask_0, 0)
-        #     mask_2 = torch.lt(mask_0, 92)
-        #     mask_3 = torch.eq(mask_1, mask_2).type(torch.float32)
-        #     mask_3 = mask_3.unsqueeze(0)
-        #     mask_3 = mask_3.unsqueeze(0)
-        #     mask_3 = F.interpolate(mask_3, size=(H, W), mode='nearest')
-        #     mask_3 = mask_3.squeeze()
-        #     # label = labels[i]
-        #     mask_3 = mask_3.view(-1)
-        #     # print("mask_3: ",mask_3.size())
-        #     # print("label: ",label.size())
-        #     mask_3= mask_3.type(torch.long)
-        #     mask_3 = mask_3.view(mask_3.size()[0], -1)
-        #     mask_3 = mask_3.expand(mask_3.size()[0], 3)
-        #     mask_3 = mask_3.reshape(-1)
-        #     labels[i] = labels[i]* mask_3
+      
 
         for idx in range(len(cls_scores)):              #单图
             rpn_cls_score = cls_scores[idx]
