@@ -854,7 +854,92 @@ class AnchorHead(BaseDenseHead):
             num_total_samples=num_total_samples)
         return dict(loss_cls=losses_cls, loss_bbox=losses_bbox)
       
-      
+    
+    @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
+    def get_bboxes_5(self,
+                   cls_scores,
+                   bbox_preds,
+                   img_metas,
+                    gt_semantic_seg=None,  #v5.0
+
+                   cfg=None,
+                   rescale=False):
+        """Transform network output for a batch into bbox predictions.
+
+        Args:
+            cls_scores (list[Tensor]): Box scores for each scale level
+                Has shape (N, num_anchors * num_classes, H, W)
+            bbox_preds (list[Tensor]): Box energies / deltas for each scale
+                level with shape (N, num_anchors * 4, H, W)
+            img_metas (list[dict]): Meta information of each image, e.g.,
+                image size, scaling factor, etc.
+            cfg (mmcv.Config | None): Test / postprocessing configuration,
+                if None, test_cfg would be used
+            rescale (bool): If True, return boxes in original image space.
+                Default: False.
+
+        Returns:
+            list[tuple[Tensor, Tensor]]: Each item in result_list is 2-tuple.
+                The first item is an (n, 5) tensor, where the first 4 columns
+                are bounding box positions (tl_x, tl_y, br_x, br_y) and the
+                5-th column is a score between 0 and 1. The second item is a
+                (n,) tensor where each item is the predicted class labelof the
+                corresponding box.
+
+        Example:
+            >>> import mmcv
+            >>> self = AnchorHead(
+            >>>     num_classes=9,
+            >>>     in_channels=1,
+            >>>     anchor_generator=dict(
+            >>>         type='AnchorGenerator',
+            >>>         scales=[8],
+            >>>         ratios=[0.5, 1.0, 2.0],
+            >>>         strides=[4,]))
+            >>> img_metas = [{'img_shape': (32, 32, 3), 'scale_factor': 1}]
+            >>> cfg = mmcv.Config(dict(
+            >>>     score_thr=0.00,
+            >>>     nms=dict(type='nms', iou_thr=1.0),
+            >>>     max_per_img=10))
+            >>> feat = torch.rand(1, 1, 3, 3)
+            >>> cls_score, bbox_pred = self.forward_single(feat)
+            >>> # note the input lists are over different levels, not images
+            >>> cls_scores, bbox_preds = [cls_score], [bbox_pred]
+            >>> result_list = self.get_bboxes(cls_scores, bbox_preds,
+            >>>                               img_metas, cfg)
+            >>> det_bboxes, det_labels = result_list[0]
+            >>> assert len(result_list) == 1
+            >>> assert det_bboxes.shape[1] == 5
+            >>> assert len(det_bboxes) == len(det_labels) == cfg.max_per_img
+        """
+        assert len(cls_scores) == len(bbox_preds)
+        num_levels = len(cls_scores)
+
+        device = cls_scores[0].device
+        featmap_sizes = [cls_scores[i].shape[-2:] for i in range(num_levels)]
+        mlvl_anchors = self.anchor_generator.grid_anchors(
+            featmap_sizes, device=device)
+
+        result_list = []
+        for img_id in range(len(img_metas)):
+            cls_score_list = [
+                cls_scores[i][img_id].detach() for i in range(num_levels)
+            ]
+            bbox_pred_list = [
+                bbox_preds[i][img_id].detach() for i in range(num_levels)
+            ]
+            # semantic_pred_single = semantic_pred[img_id]
+            gt_semantic_seg_single = gt_semantic_seg[img_id]         #v5.0
+            img_shape = img_metas[img_id]['img_shape']
+            scale_factor = img_metas[img_id]['scale_factor']
+            proposals = self._get_bboxes_single_5(cls_score_list, bbox_pred_list,
+                                                mlvl_anchors, img_shape,
+                                                scale_factor,gt_semantic_seg_single,cfg,rescale)    #v5.0
+            result_list.append(proposals)
+        return result_list
+    
+    
+    
     @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
     def get_bboxes_2(self,
                    cls_scores,
