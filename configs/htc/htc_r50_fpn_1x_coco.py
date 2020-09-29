@@ -53,7 +53,7 @@ test_pipeline = [
 data = dict(
     train=dict(
         seg_prefix=data_root + 'stuffthingmaps/val2017/',
-        ann_file=data_root + 'annotations/instances_val2017.json',
+        ann_file=data_root + 'annotations/tmp/instances_val2017.json',
         img_prefix=data_root + 'val2017_5000/',
         pipeline=train_pipeline),
     val=dict(
@@ -64,6 +64,8 @@ data = dict(
         ann_file=data_root + 'annotations/tmp/instances_val2017_11.json',
         img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline))
+
+checkpoint_cfg=dict(create_symlink=False)
 
 # _base_ = './htc_without_semantic_r50_fpn_1x_coco.py'
 # model = dict(
