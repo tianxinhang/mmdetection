@@ -89,7 +89,7 @@ def main():
     cfg.lr_config.warmup = None
     cfg.evaluation.interval = 20
     # We can set the checkpoint saving interval to reduce the storage cost
-    cfg.checkpoint_config.interval = 20
+    cfg.checkpoint_config.interval = 2
     cfg.load_from = "checkpoints/htc_r101_fpn_20e_coco_20200317-9b41b48f.pth"
     #mime
     
