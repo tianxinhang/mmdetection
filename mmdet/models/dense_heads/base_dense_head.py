@@ -99,5 +99,6 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
         if proposal_cfg is None:
             return losses
         else:
-            proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg)
+#             proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg)
+            proposal_list = self.get_bboxes_5(*outs, img_metas, gt_semantic_seg=gt_semantic_seg,cfg=proposal_cfg)  # v5.0
             return losses, proposal_list
