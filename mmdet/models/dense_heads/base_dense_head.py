@@ -24,7 +24,6 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
                       x,
                       img_metas,
                       gt_bboxes,
-                        semantic_pred,
                       gt_labels=None,
                       gt_bboxes_ignore=None,
                       proposal_cfg=None,
@@ -55,11 +54,11 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
         else:
             loss_inputs = outs + (gt_bboxes, gt_labels, img_metas)
 #         losses = self.loss_2(*loss_inputs,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore)
-        losses = self.loss_2(*outs,gt_bboxes,gt_labels,img_metas,semantic_pred=semantic_pred, gt_bboxes_ignore=gt_bboxes_ignore, gt_semantic_seg= gt_semantic_seg)
+        losses = self.loss_2(*outs,gt_bboxes,gt_labels,img_metas,gt_bboxes_ignore=gt_bboxes_ignore, gt_semantic_seg= gt_semantic_seg)
         if proposal_cfg is None:
             return losses
         else:
-            proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg)
+            proposal_list = self.get_bboxes_5(*outs, img_metas, gt_semantic_seg=gt_semantic_seg,cfg=proposal_cfg)
             return losses, proposal_list
         
 
@@ -99,6 +98,6 @@ class BaseDenseHead(nn.Module, metaclass=ABCMeta):
         if proposal_cfg is None:
             return losses
         else:
-#             proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg)
-            proposal_list = self.get_bboxes_5(*outs, img_metas, gt_semantic_seg=gt_semantic_seg,cfg=proposal_cfg)  # v5.0
+            proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg)
+#             proposal_list = self.get_bboxes_5(*outs, img_metas, gt_semantic_seg=gt_semantic_seg,cfg=proposal_cfg)  # v5.0
             return losses, proposal_list
