@@ -57,7 +57,7 @@ class HybridTaskCascade(CascadeRCNN):
         losses = dict()
         if self.roi_head.with_semantic:
             semantic_pred, semantic_feat = self.roi_head.semantic_head(x)
-            semantic_pred_single = torch.argmax(semantic_pred, axis=1)  # shape (N, C, H, W) 》》 shape(N,1,H,W).
+#             semantic_pred_single = torch.argmax(semantic_pred, axis=1)  # shape (N, C, H, W) 》》 shape(N,1,H,W).
         # RPN forward and loss
         if self.with_rpn:
             proposal_cfg = self.train_cfg.get('rpn_proposal',
@@ -66,7 +66,6 @@ class HybridTaskCascade(CascadeRCNN):
                 x,
                 img_metas,
                 gt_bboxes,
-                semantic_pred_single,
                 gt_labels=None,
                 gt_bboxes_ignore=gt_bboxes_ignore,
                 proposal_cfg=proposal_cfg,**kwargs)
