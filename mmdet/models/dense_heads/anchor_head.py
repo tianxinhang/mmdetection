@@ -284,7 +284,6 @@ class AnchorHead(BaseDenseHead):
                             gt_bboxes_ignore,
                             gt_labels,
                             img_meta,
-                            semantic_pred = None,
                             label_channels=1,
                             unmap_outputs=True):
         """Compute regression and classification targets for anchors in a
@@ -484,7 +483,6 @@ class AnchorHead(BaseDenseHead):
                     valid_flag_list,
                     gt_bboxes_list,
                     img_metas,
-                    semantic_pred = None,
                     gt_bboxes_ignore_list=None,
                     gt_labels_list=None,
                     label_channels=1,
@@ -554,7 +552,6 @@ class AnchorHead(BaseDenseHead):
             gt_bboxes_ignore_list,
             gt_labels_list,
             img_metas,
-            semantic_pred,
             label_channels=label_channels,
             unmap_outputs=unmap_outputs)
         (all_labels, all_label_weights, all_bbox_targets, all_bbox_weights,
@@ -632,7 +629,7 @@ class AnchorHead(BaseDenseHead):
       
       
       
-      
+    
     def loss_single_2(self, cls_score, bbox_pred, anchors, labels, label_weights,          #labels, label_weights, bbox_targets这些长度还是anchor size，但只有256个不是0
                     bbox_targets, bbox_weights,gt_semantic_segs,num_total_samples,):
         """Compute loss of a single scale level.
@@ -787,7 +784,6 @@ class AnchorHead(BaseDenseHead):
              gt_bboxes,
              gt_labels,  # gt_labels一般都是None
              img_metas,
-               semantic_pred = None,
              gt_bboxes_ignore=None,gt_semantic_seg=None):
         """Compute losses of the head.
 
@@ -820,7 +816,6 @@ class AnchorHead(BaseDenseHead):
             valid_flag_list,
             gt_bboxes,
             img_metas,
-            semantic_pred,
             gt_bboxes_ignore_list=gt_bboxes_ignore,
             gt_labels_list=gt_labels,
             label_channels=label_channels)
@@ -861,7 +856,6 @@ class AnchorHead(BaseDenseHead):
                    bbox_preds,
                    img_metas,
                     gt_semantic_seg=None,  #v5.0
-
                    cfg=None,
                    rescale=False):
         """Transform network output for a batch into bbox predictions.
@@ -947,7 +941,6 @@ class AnchorHead(BaseDenseHead):
                    img_metas,
                     semantic_num_classes,
                     semantic_pred=None,
-
                    cfg=None,
                    rescale=False):
         """Transform network output for a batch into bbox predictions.
