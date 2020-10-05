@@ -203,7 +203,7 @@ class BaseDetector(nn.Module, metaclass=ABCMeta):
         if return_loss:
             return self.forward_train_2(img, img_metas, **kwargs)
         else:
-            return self.forward_test(img, img_metas, **kwargs)
+            return self.forward_test_2(img, img_metas, **kwargs)
     
     @auto_fp16(apply_to=('img',))
     def forward_2(self, img, img_metas, return_loss=True, **kwargs):
